@@ -470,6 +470,18 @@
     flex: 1; min-height: 70px; overflow-y: auto;
     display: flex; flex-direction: column; gap: 4px;
     padding-right: 2px;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(120, 130, 150, 0.35) transparent;
+  }
+  .history-list::-webkit-scrollbar { width: 6px; }
+  .history-list::-webkit-scrollbar-track { background: transparent; }
+  .history-list::-webkit-scrollbar-thumb {
+    background: rgba(120, 130, 150, 0.35);
+    border-radius: 999px;
+  }
+  .history-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(120, 130, 150, 0.55);
   }
   .history-item {
     display: flex; align-items: center; gap: 8px;
@@ -1315,6 +1327,9 @@
       if (Array.isArray(arr)) {
         sessions = arr.filter(function (s) { return s && s.id; });
       }
+      sessions.forEach(function (s) {
+        if (!s.createdAt) s.createdAt = s.updatedAt || Date.now();
+      });
     } catch (e) { sessions = []; }
     currentSessionId = lsGet(STORE.current) || "";
 
@@ -1346,8 +1361,15 @@
     sessions = sessions.filter(function (s) {
       return s.id === currentSessionId || (s.messages && s.messages.length);
     });
-    sessions.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
-    if (sessions.length > 30) sessions = sessions.slice(0, 30);
+    // 固定按创建时间排序：切换会话不会改变列表位置
+    sessions.sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    if (sessions.length > 30) {
+      var byRecent = sessions.slice().sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+      var keep = {};
+      byRecent.slice(0, 30).forEach(function (s) { keep[s.id] = 1; });
+      if (currentSessionId) keep[currentSessionId] = 1;
+      sessions = sessions.filter(function (s) { return keep[s.id]; });
+    }
     lsSet(STORE.sessions, JSON.stringify(sessions));
     if (currentSessionId) lsSet(STORE.current, currentSessionId);
     else lsDel(STORE.current);
@@ -1356,7 +1378,7 @@
   function ensureSession() {
     var s = findSession(currentSessionId);
     if (s) return s;
-    s = { id: sessionKey(), conversationId: "", title: "", updatedAt: Date.now(), messages: [] };
+    s = { id: sessionKey(), conversationId: "", title: "", createdAt: Date.now(), updatedAt: Date.now(), messages: [] };
     sessions.push(s);
     currentSessionId = s.id;
     return s;
@@ -1497,8 +1519,9 @@
 
   function renderSessions() {
     if (!historyList) return;
+    var prevScroll = historyList.scrollTop;
     historyList.innerHTML = "";
-    var list = sessions.slice().sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+    var list = sessions.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
     var shown = 0;
     list.forEach(function (s) {
       if (!s.messages || !s.messages.length) return;
@@ -1532,6 +1555,7 @@
       empty.textContent = "暂无历史对话";
       historyList.appendChild(empty);
     }
+    historyList.scrollTop = prevScroll;
   }
 
   /* ============================================================
