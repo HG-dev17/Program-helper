@@ -52,7 +52,7 @@ flowchart LR
    |---|---|---|
    | `COZE_PAT` | `pat_xxxxxxxx...` | Secret（加密） |
    | `COZE_BOT_ID` | `7694242160769908799` | Text |
-   | `ALLOW_ORIGIN` | `https://你的用户名.github.io` | Text |
+   | `ALLOW_ORIGIN` | `https://cookiesky.cn` | Text |
 
 4. 记下 Worker 地址，例如：
 
@@ -75,7 +75,7 @@ https://coze-proxy.你的子域.workers.dev
    |---|---|
    | `COZE_PAT` | `pat_xxxxxxxx...`（设为 Secret） |
    | `COZE_BOT_ID` | `7694242160769908799` |
-   | `ALLOW_ORIGIN` | `https://hg-dev17.github.io` |
+   | `ALLOW_ORIGIN` | `https://cookiesky.cn` |
 
 4. 点击 **Deploy**，得到地址，例如：
 
@@ -101,21 +101,32 @@ var CONFIG = {
 > 如果是 `server.js` 同域部署，`proxyBase` 保持空字符串即可。
 >
 > 临时切换代理（不用重新部署）：在网址后加参数即可
-> `https://hg-dev17.github.io/Program-helper/?proxy=https://program-helper.你的用户名.deno.dev`
+> `https://cookiesky.cn/Program-helper/?proxy=https://program-helper.你的用户名.deno.dev`
 
-## 第 3 步：上传到 GitHub Pages
+## 第 3 步：GitHub Pages
 
-1. 新建一个 **public** 仓库（例如 `programming-helper`）。
-2. 只上传以下文件：
-   - `chat.html` → 重命名为 **`index.html`**
-   - 新建一个空文件 **`.nojekyll`**（防止 Jekyll 处理静态资源）
-3. 仓库 **Settings** → **Pages** → Source 选 **Deploy from a branch** →
-   Branch 选 `main`、目录选 `/(root)` → **Save**。
-4. 等待 1~2 分钟，访问：
+本项目已推送到 <https://github.com/HG-dev17/Program-helper>，仓库根目录已包含：
 
 ```
-https://你的用户名.github.io/programming-helper/
+index.html      ← 聊天页面（由 chat.html 重命名而来）
+.nojekyll       ← 禁用 Jekyll
+README.md
+worker.js / server.js / deno-proxy.ts
 ```
+
+1. 仓库 **Settings → Pages** → **Build and deployment**：
+   - Source 选 **Deploy from a branch**
+   - Branch 选 **`main`**，目录选 **`/(root)`** → **Save**
+2. 等待 1~2 分钟，Pages 页面会显示 **Your site is live at …**。
+3. 你的账号已经给用户站点绑定了 `cookiesky.cn`，因此项目站点的地址是：
+
+```
+https://cookiesky.cn/Program-helper/
+```
+
+> 如果访问 `https://hg-dev17.github.io/Program-helper/` 被 301 到 `cookiesky.cn`，
+> 属于 GitHub Pages 的正常行为（用户站点的自定义域名会作用于所有项目站点），
+> 以 `https://cookiesky.cn/Program-helper/` 为准。
 
 ## 第 4 步：验证
 
