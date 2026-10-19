@@ -93,7 +93,7 @@ https://program-helper.你的用户名.deno.dev
 ```js
 var CONFIG = {
   mode: "proxy",
-  proxyBase: "https://coze-api.cookiesky.cn",   // ← 自定义子域名（CNAME 到 Deno）
+  proxyBase: "https://ripe-cuttlefish-4323.hg-dev17.deno.net",   // ← Deno Deploy 分配的地址（无需自定义域名）
   ...
 };
 ```

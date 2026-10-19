@@ -765,10 +765,9 @@
   var CONFIG = {
     mode: "proxy",
     // 代理地址：同域部署（server.js）时留空；
-    // 跨域部署（GitHub Pages + Cloudflare Worker）时填 Worker 地址。
-    // 自定义子域名：CNAME 指向 Deno Deploy 等支持外链 CNAME 的平台
-    // （Cloudflare Worker 不支持仅用 CNAME 绑定，必须迁移 NS，故不采用）
-    proxyBase: "https://coze-api.cookiesky.cn",
+    // 跨域部署（GitHub Pages + Deno Deploy）时填 Deno 地址。
+    // 不需要自定义域名，直接用 Deno Deploy 分配的三级域名即可
+    proxyBase: "https://ripe-cuttlefish-4323.hg-dev17.deno.net",
     apiBase: "https://api.coze.cn",
     botId: "7694242160769908799",
     // 仅 direct 模式会用到；公开部署请保持为空
