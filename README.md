@@ -1,13 +1,14 @@
 # 初中编程学习小助手 · 部署说明
 
-> GitHub Pages 只能托管静态文件，**无法隐藏任何密钥**。
-> 正确做法：页面放在 GitHub Pages，令牌放在 Cloudflare Worker 的 Secret 里。
+> 当前部署方式：**Vercel 同时托管聊天页面与代理**（<https://coze-api.cookiesky.cn>）。
+> GitHub 仓库仅作代码存储，已关闭 GitHub Pages。
+> 令牌只保存在 Vercel 的 Environment Variables（Secret）中，前端代码不含任何密钥。
 
 ## 架构
 
 ```mermaid
 flowchart LR
-    A["浏览器<br/>GitHub Pages 静态页"] -->|"POST /api/chat<br/>（无令牌）"| B["Cloudflare Worker<br/>COZE_PAT 存于 Secret"]
+    A["浏览器<br/>https://coze-api.cookiesky.cn"] -->|"POST /api/chat<br/>（无令牌）"| B["Vercel Edge Function<br/>COZE_PAT 存于环境变量"]
     B -->|"Authorization: Bearer pat_xxx"| C["扣子 v3 Chat API"]
     C -.->|"SSE 流式返回"| B
     B -.->|"SSE 透传"| A
@@ -27,6 +28,9 @@ flowchart LR
 | 文件 | 用途 | 是否可提交到公开仓库 |
 |---|---|---|
 | `chat.html` | 单文件聊天界面（默认代理模式，不含任何密钥） | ✅ |
+| `index.html` | 页面入口（由 `chat.html` 复制），由 Vercel 直接托管 | ✅ |
+| `api/chat.js` | Vercel Edge 代理，对应 `POST /api/chat`（流式 SSE） | ✅（不含密钥） |
+| `api/health.js` | Vercel 健康检查，对应 `GET /api/health` | ✅ |
 | `worker.js` | Cloudflare Worker 代理（国际线路） | ✅（不含密钥） |
 | `deno-proxy.ts` | Deno Deploy 代理（国内线路可用） | ✅（不含密钥） |
 | `server.js` | Node 代理 + 静态服务（本地调试 / VPS） | ✅ |
@@ -99,7 +103,7 @@ https://program-helper.你的用户名.deno.dev
    |---|---|
    | `COZE_PAT` | `pat_xxxxxxxx...`（设为 Secret） |
    | `COZE_BOT_ID` | `7694242160769908799` |
-   | `ALLOW_ORIGIN` | `https://cookiesky.cn,https://coze-api.cookiesky.cn` |
+   | `ALLOW_ORIGIN` | `https://coze-api.cookiesky.cn` |
 
 4. 点 **Deploy**，先拿到 `https://program-helper-xxx.vercel.app` 验证 `/api/health`。
 5. 项目 → **Settings → Domains → Add**，填 `coze-api.cookiesky.cn`，
@@ -115,55 +119,39 @@ https://program-helper.你的用户名.deno.dev
 
 ## 第 2 步：让页面指向代理
 
-编辑 `chat.html`（或部署后的 `index.html`），只改一行：
+编辑 `chat.html`（或部署后的 `index.html`）。页面与代理同域，`proxyBase` 保持空字符串：
 
 ```js
 var CONFIG = {
   mode: "proxy",
-  proxyBase: "https://coze-api.cookiesky.cn",   // ← Vercel 自定义域名（DNS 生效前可先用 ?proxy= 临时切换）
+  proxyBase: "",   // 同域，请求直接发往 /api/chat
   ...
 };
 ```
 
-> **不要**把 `coze-api.cookiesky.cn` 直接 CNAME 到 `*.workers.dev`：
-> Cloudflare Worker 按 Host 路由，只配 CNAME 不会生效，证书也对不上。
-> Worker 想用自己的域名，必须把 `cookiesky.cn` 的 NS 迁到 Cloudflare。
-> 只想加一条 DNS 记录的话，请用 **Deno Deploy / Netlify** 这类支持外链 CNAME 的平台。
+> 如果以后把页面放到其他域名，再填代理的完整地址（如 `https://coze-api.cookiesky.cn`）。
+> 临时切换代理（不用重新部署）：在网址后加 `?proxy=https://其它代理地址`。
 
-> 如果是 `server.js` 同域部署，`proxyBase` 保持空字符串即可。
->
-> 临时切换代理（不用重新部署）：在网址后加参数即可
-> `https://cookiesky.cn/Program-helper/?proxy=https://program-helper.你的用户名.deno.dev`
+## 第 3 步：访问地址
 
-## 第 3 步：GitHub Pages
-
-本项目已推送到 <https://github.com/HG-dev17/Program-helper>，仓库根目录已包含：
+Vercel 项目同时托管页面与接口，直接访问：
 
 ```
-index.html      ← 聊天页面（由 chat.html 重命名而来）
-.nojekyll       ← 禁用 Jekyll
-README.md
-worker.js / server.js / deno-proxy.ts
+https://coze-api.cookiesky.cn/
 ```
 
-1. 仓库 **Settings → Pages** → **Build and deployment**：
-   - Source 选 **Deploy from a branch**
-   - Branch 选 **`main`**，目录选 **`/(root)`** → **Save**
-2. 等待 1~2 分钟，Pages 页面会显示 **Your site is live at …**。
-3. 你的账号已经给用户站点绑定了 `cookiesky.cn`，因此项目站点的地址是：
+| 用途 | 地址 |
+|---|---|
+| 聊天页面 | `https://coze-api.cookiesky.cn/` |
+| 健康检查 | `https://coze-api.cookiesky.cn/api/health` |
+| 聊天接口 | `POST https://coze-api.cookiesky.cn/api/chat` |
 
-```
-https://cookiesky.cn/Program-helper/
-```
-
-> 如果访问 `https://hg-dev17.github.io/Program-helper/` 被 301 到 `cookiesky.cn`，
-> 属于 GitHub Pages 的正常行为（用户站点的自定义域名会作用于所有项目站点），
-> 以 `https://cookiesky.cn/Program-helper/` 为准。
+> GitHub 仓库仅用于代码托管，GitHub Pages 已关闭，不再发布静态站点。
 
 ## 第 4 步：验证
 
-- 页面右下角不再出现「请配置访问令牌」，直接可以聊天；
-- F12 → Network 里只有发往你自己的 Worker 的 `/api/chat` 请求；
+- 页面直接打开即可聊天，不再出现「请配置访问令牌」；
+- F12 → Network 里只有发往同域 `/api/chat` 的请求；
 - 浏览器控制台、页面源码中搜索 `pat_` 应为 0 结果。
 
 ## 自定义域名（DNS）配置
@@ -224,14 +212,14 @@ https://cookiesky.cn/Program-helper/
 
 - [ ] **立刻吊销旧令牌**：之前 `chat.html` / `index.js` 里写过 PAT，请到
       扣子 → 个人空间 → 扣子 API → 个人访问令牌，删除旧令牌并重新生成。
-- [ ] 新令牌只填入 Cloudflare Worker 的 Secret，不再写进任何前端文件。
+- [ ] 新令牌只填入 Vercel 的 Environment Variables（Secret），不再写进任何前端文件。
 - [ ] 不要提交 `index.js`（本目录的 `.gitignore` 已忽略它）。
-- [ ] `ALLOW_ORIGIN` 限制为你的 Pages 域名，避免他人网页直接调用你的代理。
-- [ ] `COZE_BOT_ID` 已锁定，防止别人拿你的 Worker 调用其他智能体。
-- [ ] 如需防刷额度：Cloudflare 控制台 → Security → WAF → Rate limiting rules，
-      对 `/api/chat` 设置每 IP 每分钟请求上限。
-- [ ] GitHub Pages 是公开站点，任何访问者都能使用你的代理；如面向特定班级，
-      可在 Worker 中增加简单的口令校验。
+- [ ] `ALLOW_ORIGIN` 限制为页面域名 `https://coze-api.cookiesky.cn`，避免他人网页直接调用你的代理。
+- [ ] `COZE_BOT_ID` 已锁定，防止别人拿你的代理调用其他智能体。
+- [ ] 如需防刷额度：Vercel 控制台 → Firewall → Rate Limit，
+      对 `/api/chat` 设置每 IP 请求上限。
+- [ ] 页面是公开站点，任何访问者都能使用你的代理；如面向特定班级，
+      可在 `api/chat.js` 中增加简单的口令校验。
 
 ## 本地调试
 

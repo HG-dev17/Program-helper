@@ -764,10 +764,9 @@
   //   "direct" —— 仅本地调试。PAT 会出现在浏览器里，切勿用于公开部署。
   var CONFIG = {
     mode: "proxy",
-    // 代理地址：同域部署（server.js）时留空；
-    // 跨域部署（GitHub Pages + Vercel）时填 Vercel 绑定的自定义域名。
-    // DNS 生效前可临时用：?proxy=https://ripe-cuttlefish-4323.hg-dev17.deno.net
-    proxyBase: "https://coze-api.cookiesky.cn",
+    // 页面与代理都部署在 Vercel（同域），保持空字符串即可。
+    // 如需临时切换代理：?proxy=https://其它代理地址
+    proxyBase: "",
     apiBase: "https://api.coze.cn",
     botId: "7694242160769908799",
     // 仅 direct 模式会用到；公开部署请保持为空
