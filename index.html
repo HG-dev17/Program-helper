@@ -773,6 +773,18 @@
     defaultToken: ""
   };
 
+  // 支持临时覆盖代理地址（无需改代码重新部署）：
+  //   https://你的页面/?proxy=https://ai.example.com
+  // 或浏览器控制台执行 localStorage.setItem("coze.proxy", "https://ai.example.com")
+  (function applyProxyOverride() {
+    var override = "";
+    try {
+      override = new URLSearchParams(location.search).get("proxy") ||
+        localStorage.getItem("coze.proxy") || "";
+    } catch (e) { /* 忽略 */ }
+    if (override) CONFIG.proxyBase = String(override).replace(/\/+$/, "");
+  })();
+
   function isProxyMode() {
     return CONFIG.mode === "proxy";
   }
