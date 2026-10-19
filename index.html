@@ -1270,9 +1270,10 @@
     }
     var raw = err && err.message ? err.message : String(err);
     if (/Failed to fetch|NetworkError|Load failed/i.test(raw)) {
-      return "<b>网络连接失败</b><br />无法访问扣子接口。常见原因：<br />" +
-        "1. 校园网 IPv6 做了 SSL 拦截（证书为 *.gxnu.edu.cn），浏览器报 ERR_CERT_COMMON_NAME_INVALID；<br />" +
-        "2. 网络被墙或断网。<br />建议：禁用网卡 IPv6、切换热点，或重新配置访问令牌后重试。";
+      return "<b>网络连接失败</b><br />无法访问代理或扣子接口。常见原因：<br />" +
+        "1. 代理域名是 *.workers.dev：中国大陆会 DNS 污染 + 阻断，请改用自定义域名或 Deno Deploy；<br />" +
+        "2. 校园网 IPv6 做了 SSL 拦截（证书为 *.gxnu.edu.cn）；<br />" +
+        "3. 网络断开。<br />建议：在网址后加 <code>?proxy=你的代理地址</code> 切换代理，或禁用网卡 IPv6。";
     }
     return "<b>出错了</b><br />" + escapeHtml(raw);
   }

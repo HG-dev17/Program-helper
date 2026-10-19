@@ -15,12 +15,20 @@ flowchart LR
 
 浏览器发出的请求里**永远没有 PAT**，源码、F12、抓包都拿不到。
 
+> ⚠️ **国内网络注意（已实测）**
+> `*.workers.dev` 在中国大陆会遭遇 DNS 污染 + SNI 阻断：系统 DNS 返回 `108.160.163.102`，
+> 真实 Cloudflare 地址为 `104.21.19.83` / `172.67.185.172`，直连会被重置。
+> 面向国内用户时，请选择：
+> - **方案 A**：给 Worker 绑定自己的域名（如 `coze-api.cookiesky.cn`）—— 见「自定义域名」一节；
+> - **方案 B**：改用 **Deno Deploy**（`*.deno.dev` 目前可访问）—— 见「方案 B」。
+
 ## 文件说明
 
 | 文件 | 用途 | 是否可提交到公开仓库 |
 |---|---|---|
 | `chat.html` | 单文件聊天界面（默认代理模式，不含任何密钥） | ✅ |
-| `worker.js` | Cloudflare Worker 代理 | ✅（不含密钥） |
+| `worker.js` | Cloudflare Worker 代理（国际线路） | ✅（不含密钥） |
+| `deno-proxy.ts` | Deno Deploy 代理（国内线路可用） | ✅（不含密钥） |
 | `server.js` | Node 代理 + 静态服务（本地调试 / VPS） | ✅ |
 | `index.html` + `index.js` | 扣子 Web SDK 演示页，`index.js` 里有 **PAT 明文** | ❌ **禁止提交** |
 
@@ -55,19 +63,45 @@ https://coze-proxy.你的子域.workers.dev
 5. 浏览器访问 `https://coze-proxy.你的子域.workers.dev/api/health`，
    返回 `{"ok":true,...}` 即部署成功。
 
-## 第 2 步：让页面指向 Worker
+> 如果在中国大陆访问该地址超时，属于 DNS 污染，不是配置错误，请使用方案 A 或 B。
+
+## 方案 B：Deno Deploy（国内可直接访问，无需命令行）
+
+1. 打开 <https://dash.deno.com>，用 GitHub 登录 → **New Project / Playground**。
+2. 把 `deno-proxy.ts` 的全部内容粘贴进去。
+3. 在项目 **Settings → Environment Variables** 添加：
+
+   | 变量名 | 值 |
+   |---|---|
+   | `COZE_PAT` | `pat_xxxxxxxx...`（设为 Secret） |
+   | `COZE_BOT_ID` | `7694242160769908799` |
+   | `ALLOW_ORIGIN` | `https://hg-dev17.github.io` |
+
+4. 点击 **Deploy**，得到地址，例如：
+
+```
+https://program-helper.你的用户名.deno.dev
+```
+
+5. 自检：浏览器打开 `https://program-helper.你的用户名.deno.dev/api/health`，
+   应返回 `{"ok":true,...}`。
+
+## 第 2 步：让页面指向代理
 
 编辑 `chat.html`（或部署后的 `index.html`），只改一行：
 
 ```js
 var CONFIG = {
   mode: "proxy",
-  proxyBase: "https://coze-proxy.你的子域.workers.dev",   // ← 改这里，末尾不要加 /
+  proxyBase: "https://coze-proxy.你的子域.workers.dev",   // ← 改成你的代理地址，末尾不要加 /
   ...
 };
 ```
 
 > 如果是 `server.js` 同域部署，`proxyBase` 保持空字符串即可。
+>
+> 临时切换代理（不用重新部署）：在网址后加参数即可
+> `https://hg-dev17.github.io/Program-helper/?proxy=https://program-helper.你的用户名.deno.dev`
 
 ## 第 3 步：上传到 GitHub Pages
 
@@ -88,6 +122,46 @@ https://你的用户名.github.io/programming-helper/
 - 页面右下角不再出现「请配置访问令牌」，直接可以聊天；
 - F12 → Network 里只有发往你自己的 Worker 的 `/api/chat` 请求；
 - 浏览器控制台、页面源码中搜索 `pat_` 应为 0 结果。
+
+## 自定义域名（DNS）配置
+
+### 方案 A：Cloudflare Worker 绑定 `coze-api.cookiesky.cn`
+
+前提：`cookiesky.cn` 的 DNS 托管在 Cloudflare（当前 NS 为 `dns3/dns4.hichina.com`，需要迁移）。
+
+1. Cloudflare 控制台 → **Add a site** → 输入 `cookiesky.cn` → 选择 Free 计划。
+2. Cloudflare 会给出两个 NS，例如 `xxx.ns.cloudflare.com`。
+3. 到阿里云域名控制台 → 域名列表 → `cookiesky.cn` → **DNS 修改** →
+   把 NS 改成 Cloudflare 给的两个地址，等待生效（几分钟到 24 小时）。
+4. **重要**：迁移前先在阿里云导出全部解析记录，迁移后在 Cloudflare 的 DNS 页面逐条重建，
+   否则博客会打不开。GitHub Pages 常用记录：
+
+   | 类型 | 名称 | 内容 |
+   |---|---|---|
+   | A | `@` | `185.199.108.153` |
+   | A | `@` | `185.199.109.153` |
+   | A | `@` | `185.199.110.153` |
+   | A | `@` | `185.199.111.153` |
+   | CNAME | `www` | `cookiesky.cn` |
+
+   有邮箱（MX）、验证（TXT）等记录也要一并迁移。
+5. 回到 Worker → **Settings → Domains & Routes → Add → Custom Domain**，
+   填 `coze-api.cookiesky.cn`，Cloudflare 会自动创建解析并签发证书。
+6. 浏览器访问 `https://coze-api.cookiesky.cn/api/health`，返回 `{"ok":true}` 即成功。
+7. 把 `index.html` 里的 `proxyBase` 改成 `https://coze-api.cookiesky.cn`。
+
+> 自定义域名只影响一个子域，做好后国内可正常访问，且不受 `workers.dev` 封锁影响。
+
+### 方案 B：Deno Deploy 绑定自定义域名
+
+Deno Deploy 项目 → **Settings → Domains → Add Domain**，填 `coze-api.cookiesky.cn`，
+然后在阿里云 DNS 添加记录（无需迁移 NS）：
+
+| 类型 | 名称 | 内容 |
+|---|---|---|
+| CNAME | `coze-api` | `program-helper.你的用户名.deno.dev` |
+
+生效后同样把 `proxyBase` 改成 `https://coze-api.cookiesky.cn`。
 
 ## 安全清单
 
@@ -122,4 +196,4 @@ node server.js
 | `错误 4015` | 智能体未发布到 Agent as API | 扣子 → 发布 → 渠道 → Agent as API |
 | `错误 401 / 4100` | 令牌无效、过期或无权限 | 重新生成 PAT 并更新 Worker Secret |
 | `错误 404`（代理模式） | `proxyBase` 没配或 Worker 路径不对 | 配置 Worker 地址，访问 `/api/health` 自检 |
-| `Failed to fetch` | 网络不通 / 校园网 IPv6 证书拦截 | 换网络，或改用 Worker（Cloudflare 出网不受影响） |
+| `Failed to fetch` | 网络不通 / 校园网 IPv6 证书拦截 / `workers.dev` 被墙 | 换网络；国内请用 Deno Deploy 或自定义域名 |
