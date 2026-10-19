@@ -20,10 +20,25 @@ export const config = { runtime: "edge" };
 const COZE_API = "https://api.coze.cn/v3/chat";
 const MAX_BODY_BYTES = 64 * 1024;
 
-function corsHeaders() {
-  const allow = process.env.ALLOW_ORIGIN || "*";
+function allowedOrigins() {
+  return String(process.env.ALLOW_ORIGIN || "*")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function pickOrigin(request) {
+  const list = allowedOrigins();
+  const origin = request.headers.get("Origin") || "";
+  if (list.includes("*")) return "*";
+  if (origin && list.includes(origin)) return origin;
+  if (!origin) return list[0] || "*";
+  return "";
+}
+
+function corsHeaders(allow) {
   return {
-    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Origin": allow || "null",
     "Access-Control-Allow-Headers": "Content-Type, Accept",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Access-Control-Max-Age": "86400",
@@ -31,18 +46,26 @@ function corsHeaders() {
   };
 }
 
-function json(status, body) {
+function jsonResponse(status, body, allow) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(), "Content-Type": "application/json; charset=utf-8" },
+    headers: { ...corsHeaders(allow), "Content-Type": "application/json; charset=utf-8" },
   });
 }
 
 export default async function handler(request) {
   const url = new URL(request.url);
+  const allow = pickOrigin(request);
+
+  // 浏览器带了 Origin 但不在白名单，直接拒绝
+  if (!allow) {
+    return new Response("Forbidden", { status: 403 });
+  }
+
+  const json = (status, body) => jsonResponse(status, body, allow);
 
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders() });
+    return new Response(null, { status: 204, headers: corsHeaders(allow) });
   }
 
   if (url.pathname === "/api/health") {
@@ -59,17 +82,12 @@ export default async function handler(request) {
 
   const pat = process.env.COZE_PAT || "";
   const botId = process.env.COZE_BOT_ID || "";
-  const allowOrigin = process.env.ALLOW_ORIGIN || "*";
 
   if (!pat) {
     return json(500, { code: 500, msg: "服务端未配置 COZE_PAT" });
   }
 
-  // 来源校验：浏览器场景有效，可降低他人网页盗用你额度的风险
-  const origin = request.headers.get("Origin") || "";
-  if (allowOrigin !== "*" && origin && origin !== allowOrigin) {
-    return json(403, { code: 403, msg: "Origin 不被允许" });
-  }
+  // 来源校验已由 pickOrigin 完成（ALLOW_ORIGIN 支持逗号分隔多个来源）
 
   const raw = await request.text();
   if (raw.length > MAX_BODY_BYTES) {
@@ -113,7 +131,7 @@ export default async function handler(request) {
   return new Response(upstream.body, {
     status: upstream.status,
     headers: {
-      ...corsHeaders(),
+      ...corsHeaders(allow),
       "Content-Type": upstream.headers.get("content-type") || "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
       "X-Accel-Buffering": "no",

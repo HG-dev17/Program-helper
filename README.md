@@ -99,7 +99,7 @@ https://program-helper.你的用户名.deno.dev
    |---|---|
    | `COZE_PAT` | `pat_xxxxxxxx...`（设为 Secret） |
    | `COZE_BOT_ID` | `7694242160769908799` |
-   | `ALLOW_ORIGIN` | `https://cookiesky.cn` |
+   | `ALLOW_ORIGIN` | `https://cookiesky.cn,https://coze-api.cookiesky.cn` |
 
 4. 点 **Deploy**，先拿到 `https://program-helper-xxx.vercel.app` 验证 `/api/health`。
 5. 项目 → **Settings → Domains → Add**，填 `coze-api.cookiesky.cn`，
