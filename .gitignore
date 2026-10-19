@@ -1,0 +1,7 @@
+# 含扣子 PAT 明文的本地调试文件，禁止提交
+index.js
+
+# 本地配置与依赖
+.env
+.env.*
+node_modules/
