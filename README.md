@@ -86,6 +86,33 @@ https://program-helper.你的用户名.deno.dev
 5. 自检：浏览器打开 `https://program-helper.你的用户名.deno.dev/api/health`，
    应返回 `{"ok":true,...}`。
 
+## 方案 C：Vercel（免费额度充足，单条 CNAME 即可）
+
+仓库已内置 `api/chat.js`（Edge Function），导入即用。
+
+1. 打开 <https://vercel.com> → **Add New → Project** → Import Git Repository，
+   选择 `HG-dev17/Program-helper`。
+2. Framework Preset 选 **Other**；Build Command、Output Directory **都留空**。
+3. **Environment Variables** 添加（Production 与 Preview 都要）：
+
+   | 变量名 | 值 |
+   |---|---|
+   | `COZE_PAT` | `pat_xxxxxxxx...`（设为 Secret） |
+   | `COZE_BOT_ID` | `7694242160769908799` |
+   | `ALLOW_ORIGIN` | `https://cookiesky.cn` |
+
+4. 点 **Deploy**，先拿到 `https://program-helper-xxx.vercel.app` 验证 `/api/health`。
+5. 项目 → **Settings → Domains → Add**，填 `coze-api.cookiesky.cn`，
+   Vercel 会给出 CNAME 目标（通常是 `cname.vercel-dns.com`）。
+6. 阿里云 DNS 添加一条记录（不用换 NS）：
+
+   | 类型 | 主机记录 | 记录值 |
+   |---|---|---|
+   | CNAME | `coze-api` | `cname.vercel-dns.com`（以 Vercel 页面为准） |
+
+7. 等 Vercel 显示 **Valid Configuration**，访问
+   `https://coze-api.cookiesky.cn/api/health` 返回 `{"ok":true}` 即完成。
+
 ## 第 2 步：让页面指向代理
 
 编辑 `chat.html`（或部署后的 `index.html`），只改一行：
@@ -93,7 +120,7 @@ https://program-helper.你的用户名.deno.dev
 ```js
 var CONFIG = {
   mode: "proxy",
-  proxyBase: "https://ripe-cuttlefish-4323.hg-dev17.deno.net",   // ← Deno Deploy 分配的地址（无需自定义域名）
+  proxyBase: "https://coze-api.cookiesky.cn",   // ← Vercel 自定义域名（DNS 生效前可先用 ?proxy= 临时切换）
   ...
 };
 ```
