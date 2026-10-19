@@ -466,6 +466,18 @@
   .link-btn:hover { color: var(--text-2); }
   .link-btn[hidden] { display: none; }
 
+  #stopBtn {
+    border: 1px solid rgba(229, 72, 77, 0.35);
+    background: rgba(229, 72, 77, 0.08);
+    color: var(--danger);
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  #stopBtn::before { content: "■"; font-size: 8px; margin-right: 5px; vertical-align: 1px; }
+  #stopBtn:hover { background: rgba(229, 72, 77, 0.16); color: var(--danger); }
+
   .token-banner {
     max-width: 880px; margin: 0 auto 10px;
     display: flex; align-items: center; gap: 10px;
@@ -709,10 +721,10 @@
 <!-- ================= 设置弹窗 ================= -->
 <div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
   <div class="sheet">
-    <h3 id="settingsTitle">连接设置</h3>
-    <p class="sub">填写扣子「个人访问令牌（PAT）」，只需配置一次，保存在本机浏览器中。</p>
+    <h3 id="settingsTitle">设置</h3>
+    <p class="sub">代理模式下无需填写令牌。可填写学号作为固定身份，或留空使用自动生成的匿名标识。</p>
 
-    <div class="field">
+    <div class="field" id="tokenField">
       <label for="tokenInput">访问令牌（PAT）</label>
       <div class="input-wrap">
         <input id="tokenInput" type="password" placeholder="pat_xxxxxxxxxxxxxxxx" spellcheck="false" autocomplete="off" />
@@ -727,11 +739,17 @@
     </div>
 
     <div class="field">
-      <label for="userIdInput">用户标识</label>
+      <label for="userIdInput">学号 / 用户标识（可选）</label>
       <div class="input-wrap">
-        <input id="userIdInput" type="text" spellcheck="false" autocomplete="off" />
+        <input id="userIdInput" type="text" spellcheck="false" autocomplete="off" maxlength="40" placeholder="留空自动生成，例如：2301-15" />
+        <button class="eye" id="resetUidBtn" type="button" aria-label="恢复自动生成" title="恢复自动生成">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 3-6.7"></path>
+            <path d="M3 4v5h5"></path>
+          </svg>
+        </button>
       </div>
-      <p class="note">用于区分对话记录，可自定义；同一标识的历史消息在扣子侧可被智能体记住。</p>
+      <p class="note">留空则自动生成匿名标识；填写学号后会固定使用，换设备需重新填写。学号会发送到扣子侧，请勿填写真实姓名。</p>
     </div>
 
     <div class="field">
@@ -848,6 +866,12 @@
     sending: false,
     abort: null
   };
+
+  // 等待计时：用于展示“思考中 N 秒 / 已生成 N 秒”
+  var waitTimer = null;
+  var waitStart = 0;
+  var firstTokenAt = 0;
+  var waitMsg = null;
 
   /* ============================================================
    *  存储工具
@@ -1139,8 +1163,15 @@
     }
 
     if (meta && msg.role === "assistant") {
-      meta.textContent = msg.streaming ? "正在输入…" : msg.time;
+      meta.textContent = metaLabel(msg);
     }
+  }
+
+  function metaLabel(msg) {
+    if (!msg.streaming) return msg.time;
+    if (msg.content) return "正在输入…";
+    var sec = waitStart ? Math.floor((Date.now() - waitStart) / 1000) : 0;
+    return sec >= 1 ? "正在输入… " + sec + "s" : "正在输入…";
   }
 
   function mountMessage(msg) {
@@ -1304,6 +1335,7 @@
 
     if (event === "conversation.message.delta") {
       if (obj.type === "answer" && typeof obj.content === "string") {
+        markFirstToken();
         assistant.content += obj.content;
         scheduleUpdate(assistant);
       }
@@ -1434,6 +1466,7 @@
     inputEl.value = "";
     autoResize();
     setSending(true);
+    startWaitTimer(assistant);
     persist();
 
     var controller = new AbortController();
@@ -1477,6 +1510,7 @@
       state.abort = null;
       updateMessageNode(assistant);
       persist();
+      stopWaitTimer();
       setSending(false);
       scrollToBottom(true);
     }
@@ -1491,8 +1525,47 @@
     stopBtn.hidden = !sending;
     statusDot.classList.toggle("busy", sending);
     statusText.textContent = sending ? "思考中…" : "在线";
-    $("hintText").textContent = sending ? "正在生成回复…" : "Enter 发送 · Shift + Enter 换行";
+    $("hintText").textContent = sending ? "正在连接模型…" : "Enter 发送 · Shift + Enter 换行";
     if (!sending) updateSendState();
+  }
+
+  function startWaitTimer(msg) {
+    stopWaitTimer();
+    waitStart = Date.now();
+    firstTokenAt = 0;
+    waitMsg = msg;
+    tickWait();
+    waitTimer = setInterval(tickWait, 1000);
+  }
+
+  function tickWait() {
+    if (!state.sending) return;
+    if (!firstTokenAt) {
+      var sec = Math.floor((Date.now() - waitStart) / 1000);
+      statusText.textContent = sec >= 5 ? "模型正在思考…" : "思考中…";
+      $("hintText").textContent = sec >= 5
+        ? "已等待 " + sec + " 秒 · 可点击「停止生成」取消"
+        : "正在连接模型…";
+    } else {
+      var gen = Math.floor((Date.now() - firstTokenAt) / 1000);
+      statusText.textContent = "生成中…";
+      $("hintText").textContent = "已生成 " + gen + " 秒 · 可点击「停止生成」";
+    }
+    var meta = waitMsg && waitMsg.node && waitMsg.node.querySelector(".meta");
+    if (meta) meta.textContent = metaLabel(waitMsg);
+  }
+
+  function markFirstToken() {
+    if (firstTokenAt) return;
+    firstTokenAt = Date.now();
+  }
+
+  function stopWaitTimer() {
+    if (waitTimer) {
+      clearInterval(waitTimer);
+      waitTimer = null;
+    }
+    waitMsg = null;
   }
 
   function updateSendState() {
@@ -1516,10 +1589,11 @@
     tokenInput.value = getToken();
     tokenInput.disabled = isProxyMode();
     tokenInput.placeholder = isProxyMode() ? "由服务端环境变量 COZE_PAT 提供" : "pat_xxxxxxxxxxxxxxxx";
+    $("tokenField").hidden = isProxyMode();
     userIdInput.value = getUserId();
     botIdInput.value = getBotId();
     settingsModal.classList.add("open");
-    setTimeout(function () { (isProxyMode() ? botIdInput : tokenInput).focus(); }, 60);
+    setTimeout(function () { (isProxyMode() ? userIdInput : tokenInput).focus(); }, 60);
   }
   function closeSettings() {
     settingsModal.classList.remove("open");
@@ -1528,16 +1602,36 @@
   function saveSettings() {
     var token = tokenInput.value.trim();
     var bot = botIdInput.value.trim();
-    var uid = userIdInput.value.trim();
+    var uid = userIdInput.value.trim().replace(/\s+/g, "-").slice(0, 40);
+    var oldUid = getUserId();
 
     if (token) lsSet(STORE.token, token); else lsDel(STORE.token);
     if (bot) lsSet(STORE.bot, bot); else lsDel(STORE.bot);
-    if (uid) lsSet(STORE.uid, uid); else lsSet(STORE.uid, getUserId());
+
+    if (uid) {
+      lsSet(STORE.uid, uid);
+    } else {
+      lsDel(STORE.uid);
+      getUserId(); // 立刻生成一个新的匿名标识
+    }
+
+    // 身份变化后旧会话不再属于当前用户，自动开新对话
+    if (oldUid !== getUserId() && state.messages.length) {
+      clearAll();
+    }
 
     updateTokenBanner();
     closeSettings();
-    toast("设置已保存");
+    toast(uid ? "已固定学号：" + uid : "已恢复自动生成");
     if (!state.sending) statusText.textContent = "在线";
+  }
+
+  function resetUid() {
+    lsDel(STORE.uid);
+    var uid = getUserId();
+    userIdInput.value = uid;
+    if (state.messages.length) clearAll();
+    toast("已恢复自动生成");
   }
 
   /* ============================================================
@@ -1631,6 +1725,8 @@
     $("eyeBtn").addEventListener("click", function () {
       tokenInput.type = tokenInput.type === "password" ? "text" : "password";
     });
+
+    $("resetUidBtn").addEventListener("click", resetUid);
 
     $("themeBtn").addEventListener("click", function () {
       var current = document.documentElement.getAttribute("data-theme");
