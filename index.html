@@ -766,7 +766,9 @@
     mode: "proxy",
     // 代理地址：同域部署（server.js）时留空；
     // 跨域部署（GitHub Pages + Cloudflare Worker）时填 Worker 地址。
-    proxyBase: "https://coze-proxy.2451517087.workers.dev",
+    // 自定义子域名：CNAME 指向 Deno Deploy 等支持外链 CNAME 的平台
+    // （Cloudflare Worker 不支持仅用 CNAME 绑定，必须迁移 NS，故不采用）
+    proxyBase: "https://coze-api.cookiesky.cn",
     apiBase: "https://api.coze.cn",
     botId: "7694242160769908799",
     // 仅 direct 模式会用到；公开部署请保持为空

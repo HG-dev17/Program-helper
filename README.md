@@ -93,10 +93,15 @@ https://program-helper.你的用户名.deno.dev
 ```js
 var CONFIG = {
   mode: "proxy",
-  proxyBase: "https://coze-proxy.你的子域.workers.dev",   // ← 改成你的代理地址，末尾不要加 /
+  proxyBase: "https://coze-api.cookiesky.cn",   // ← 自定义子域名（CNAME 到 Deno）
   ...
 };
 ```
+
+> **不要**把 `coze-api.cookiesky.cn` 直接 CNAME 到 `*.workers.dev`：
+> Cloudflare Worker 按 Host 路由，只配 CNAME 不会生效，证书也对不上。
+> Worker 想用自己的域名，必须把 `cookiesky.cn` 的 NS 迁到 Cloudflare。
+> 只想加一条 DNS 记录的话，请用 **Deno Deploy / Netlify** 这类支持外链 CNAME 的平台。
 
 > 如果是 `server.js` 同域部署，`proxyBase` 保持空字符串即可。
 >
@@ -163,16 +168,30 @@ https://cookiesky.cn/Program-helper/
 
 > 自定义域名只影响一个子域，做好后国内可正常访问，且不受 `workers.dev` 封锁影响。
 
-### 方案 B：Deno Deploy 绑定自定义域名
+### 方案 B：只加一条 CNAME（推荐，不迁移 NS）
 
-Deno Deploy 项目 → **Settings → Domains → Add Domain**，填 `coze-api.cookiesky.cn`，
-然后在阿里云 DNS 添加记录（无需迁移 NS）：
+适用场景：只想给这个页面单独配一条 DNS，不动 `cookiesky.cn` 的 NS。
 
-| 类型 | 名称 | 内容 |
-|---|---|---|
-| CNAME | `coze-api` | `program-helper.你的用户名.deno.dev` |
+1. 先在 **Deno Deploy** 项目 → **Settings → Domains → Add Domain**，
+   填 `coze-api.cookiesky.cn`。平台会给出 CNAME 目标（通常就是
+   `program-helper.你的用户名.deno.dev`）。
+2. 登录阿里云 → **云解析 DNS** → `cookiesky.cn` → 解析设置 → **添加记录**：
 
-生效后同样把 `proxyBase` 改成 `https://coze-api.cookiesky.cn`。
+   | 配置项 | 值 |
+   |---|---|
+   | 记录类型 | **CNAME** |
+   | 主机记录 | `coze-api` |
+   | 解析线路 | 默认 |
+   | 记录值 | `program-helper.你的用户名.deno.dev`（以 Deno 页面显示为准） |
+   | TTL | 600 |
+
+3. 等待 5~10 分钟，回到 Deno 页面点 **Verify / Refresh**，
+   状态变为 Active 后会自动签发 HTTPS 证书。
+4. 浏览器打开 `https://coze-api.cookiesky.cn/api/health`，
+   返回 `{"ok":true}` 即成功。
+5. `index.html` 里的 `proxyBase` 已经是该地址，不需要再改。
+
+> 只新增 `coze-api` 这一个子域记录，不要动 `@` / `www`，博客解析不受影响。
 
 ## 安全清单
 
