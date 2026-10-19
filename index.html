@@ -466,6 +466,37 @@
   .link-btn:hover { color: var(--text-2); }
   .link-btn[hidden] { display: none; }
 
+  .history-list {
+    flex: 1; min-height: 70px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 4px;
+    padding-right: 2px;
+  }
+  .history-item {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 8px 9px;
+    border: 1px solid transparent; border-radius: 10px;
+    background: transparent; color: var(--text-2);
+    font: inherit; text-align: left; cursor: pointer;
+  }
+  .history-item:hover { background: rgba(91, 91, 214, 0.08); }
+  .history-item.active {
+    background: rgba(91, 91, 214, 0.12);
+    border-color: rgba(91, 91, 214, 0.28);
+    color: var(--text);
+  }
+  .hi-title {
+    flex: 1; min-width: 0; font-size: 12.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .hi-time { flex: none; font-size: 10.5px; color: var(--text-3); }
+  .hi-del {
+    flex: none; width: 18px; height: 18px; line-height: 16px;
+    text-align: center; border-radius: 50%; color: var(--text-3); opacity: 0;
+  }
+  .history-item:hover .hi-del { opacity: 1; }
+  .hi-del:hover { background: rgba(229, 72, 77, 0.15); color: var(--danger); }
+  .history-empty { font-size: 11.5px; color: var(--text-3); padding: 6px 2px; }
+
   #stopBtn {
     border: 1px solid rgba(229, 72, 77, 0.35);
     background: rgba(229, 72, 77, 0.08);
@@ -519,6 +550,11 @@
 
   .field { margin-bottom: 16px; }
   .field label { display: block; font-size: 12.5px; font-weight: 650; margin-bottom: 7px; }
+  .toggle-row {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; font-weight: 650; cursor: pointer;
+  }
+  .toggle-row input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
   .field .note { margin: 6px 0 0; font-size: 11.5px; color: var(--text-3); line-height: 1.55; }
   .input-wrap { position: relative; display: flex; align-items: center; }
   .input-wrap input {
@@ -637,6 +673,9 @@
     <div class="side-title">试试这样问</div>
     <div class="suggestions" id="sideSuggestions"></div>
 
+    <div class="side-title">历史对话</div>
+    <div class="history-list" id="historyList"></div>
+
     <div class="side-footer">
       <button class="btn-ghost" id="settingsBtn" type="button">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
@@ -722,7 +761,15 @@
 <div class="modal" id="settingsModal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
   <div class="sheet">
     <h3 id="settingsTitle">设置</h3>
-    <p class="sub">代理模式下无需填写令牌。可填写学号作为固定身份，或留空使用自动生成的匿名标识。</p>
+    <p class="sub">默认使用本站代理，无需填写令牌；也可以勾选下方选项，改用你自己的扣子令牌。</p>
+
+    <div class="field">
+      <label class="toggle-row" for="ownTokenToggle">
+        <input id="ownTokenToggle" type="checkbox" />
+        <span>使用我自己的访问令牌（直连扣子）</span>
+      </label>
+      <p class="note">不勾选 = 使用本站代理；勾选后请求直接发往扣子，消耗你自己账户的额度，令牌只保存在本机浏览器。</p>
+    </div>
 
     <div class="field" id="tokenField">
       <label for="tokenInput">访问令牌（PAT）</label>
@@ -804,7 +851,7 @@
   })();
 
   function isProxyMode() {
-    return CONFIG.mode === "proxy";
+    return MODE !== "direct";
   }
 
   function chatEndpoint() {
@@ -820,8 +867,17 @@
     bot: "coze.bot",
     history: "coze.history",
     conv: "coze.conv",
-    theme: "coze.theme"
+    theme: "coze.theme",
+    mode: "coze.mode",
+    sessions: "coze.sessions",
+    current: "coze.current"
   };
+
+  var sessions = [];
+  var currentSessionId = "";
+
+  // 本机选择的模式：默认 proxy，可在设置里切换为 direct（自带令牌直连）
+  var MODE = (lsGet(STORE.mode) || CONFIG.mode) === "direct" ? "direct" : "proxy";
 
   var SUGGESTIONS = [
     "我想弄懂一个 Python 知识点",
@@ -843,6 +899,7 @@
   var welcomeTextEl = $("welcomeText");
   var welcomeChips = $("welcomeChips");
   var sideSuggestions = $("sideSuggestions");
+  var historyList = $("historyList");
   var inputEl = $("input");
   var sendBtn = $("sendBtn");
   var stopBtn = $("stopBtn");
@@ -854,6 +911,7 @@
   var scrim = $("scrim");
   var settingsModal = $("settingsModal");
   var tokenInput = $("tokenInput");
+  var ownTokenToggle = $("ownTokenToggle");
   var userIdInput = $("userIdInput");
   var botIdInput = $("botIdInput");
 
@@ -1222,51 +1280,248 @@
   /* ============================================================
    *  会话持久化
    * ============================================================ */
-  function persist() {
-    var plain = state.messages.map(function (m) {
+  function sessionKey() {
+    return "s-" + Date.now().toString(36) + "-" + Math.random().toString(16).slice(2, 8);
+  }
+
+  function findSession(id) {
+    for (var i = 0; i < sessions.length; i++) {
+      if (sessions[i] && sessions[i].id === id) return sessions[i];
+    }
+    return null;
+  }
+
+  function titleFromMessages(list) {
+    for (var i = 0; i < list.length; i++) {
+      var m = list[i];
+      if (m && m.role === "user" && m.content) {
+        var t = String(m.content).replace(/\s+/g, " ").trim();
+        return t.length > 18 ? t.slice(0, 18) + "…" : t;
+      }
+    }
+    return "新对话";
+  }
+
+  function loadSessions() {
+    sessions = [];
+    try {
+      var raw = lsGet(STORE.sessions);
+      var arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) {
+        sessions = arr.filter(function (s) { return s && s.id; });
+      }
+    } catch (e) { sessions = []; }
+    currentSessionId = lsGet(STORE.current) || "";
+
+    // 迁移旧版单会话数据
+    if (!sessions.length) {
+      try {
+        var legacy = JSON.parse(lsGet(STORE.history) || "[]");
+        if (Array.isArray(legacy) && legacy.length) {
+          var s = {
+            id: sessionKey(),
+            conversationId: lsGet(STORE.conv) || "",
+            title: titleFromMessages(legacy),
+            updatedAt: Date.now(),
+            messages: legacy
+          };
+          sessions.push(s);
+          currentSessionId = s.id;
+          lsDel(STORE.history);
+          lsDel(STORE.conv);
+        }
+      } catch (e) { /* 忽略损坏缓存 */ }
+    }
+
+    if (currentSessionId && !findSession(currentSessionId)) currentSessionId = "";
+    saveSessions();
+  }
+
+  function saveSessions() {
+    sessions = sessions.filter(function (s) {
+      return s.id === currentSessionId || (s.messages && s.messages.length);
+    });
+    sessions.sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+    if (sessions.length > 30) sessions = sessions.slice(0, 30);
+    lsSet(STORE.sessions, JSON.stringify(sessions));
+    if (currentSessionId) lsSet(STORE.current, currentSessionId);
+    else lsDel(STORE.current);
+  }
+
+  function ensureSession() {
+    var s = findSession(currentSessionId);
+    if (s) return s;
+    s = { id: sessionKey(), conversationId: "", title: "", updatedAt: Date.now(), messages: [] };
+    sessions.push(s);
+    currentSessionId = s.id;
+    return s;
+  }
+
+  function syncCurrentSession() {
+    var s = ensureSession();
+    s.messages = state.messages.map(function (m) {
       return { role: m.role, content: m.content, time: m.time || "" };
     });
-    lsSet(STORE.history, JSON.stringify(plain));
-    if (state.conversationId) lsSet(STORE.conv, state.conversationId);
+    if (state.conversationId) s.conversationId = state.conversationId;
+    s.updatedAt = Date.now();
+    if (!s.title) s.title = titleFromMessages(s.messages);
+    saveSessions();
+    renderSessions();
+  }
+
+  function persist() {
+    syncCurrentSession();
+  }
+
+  function mountPlain(item) {
+    if (!item || (item.role !== "user" && item.role !== "assistant")) return;
+    if (item.role === "assistant" && !String(item.content || "").trim()) return;
+    var msg = {
+      role: item.role,
+      content: String(item.content || ""),
+      time: item.time || "",
+      streaming: false,
+      error: "",
+      followUps: null
+    };
+    state.messages.push(msg);
+    hideWelcome();
+    mountMessage(msg);
   }
 
   function restore() {
-    var raw = lsGet(STORE.history);
-    if (!raw) return;
-    try {
-      var list = JSON.parse(raw);
-      if (!Array.isArray(list)) return;
-      list.forEach(function (item) {
-        if (!item || (item.role !== "user" && item.role !== "assistant")) return;
-        // 跳过流式过程中被中断、内容为空的助手消息
-        if (item.role === "assistant" && !String(item.content || "").trim() && !item.error) return;
-        var msg = {
-          role: item.role,
-          content: String(item.content || ""),
-          time: item.time || "",
-          streaming: false,
-          error: "",
-          followUps: null
-        };
-        state.messages.push(msg);
-        hideWelcome();
-        mountMessage(msg);
-      });
+    loadSessions();
+    var s = findSession(currentSessionId);
+    if (s) {
+      state.conversationId = s.conversationId || "";
+      (s.messages || []).forEach(mountPlain);
       if (state.messages.length) scrollToBottom(true);
-    } catch (e) { /* 忽略损坏的缓存 */ }
+    }
+    renderSessions();
   }
 
-  function clearAll() {
+  function removeMessageNodes() {
     state.messages.forEach(function (m) {
       if (m.node && m.node.parentNode) m.node.parentNode.removeChild(m.node);
     });
+  }
+
+  function clearAll() {
+    removeMessageNodes();
     state.messages = [];
     state.conversationId = "";
-    lsDel(STORE.history);
-    lsDel(STORE.conv);
+    var s = findSession(currentSessionId);
+    if (s) {
+      s.messages = [];
+      s.conversationId = "";
+      s.title = "";
+      s.updatedAt = Date.now();
+    }
     messagesEl.innerHTML = "";
     showWelcomeIfEmpty();
+    saveSessions();
+    renderSessions();
     toast("对话已清空");
+  }
+
+  function newSession() {
+    syncCurrentSession();
+    var cur = findSession(currentSessionId);
+    if (cur && (!cur.messages || !cur.messages.length)) {
+      sessions = sessions.filter(function (s) { return s.id !== currentSessionId; });
+    }
+    currentSessionId = "";
+    removeMessageNodes();
+    state.messages = [];
+    state.conversationId = "";
+    messagesEl.innerHTML = "";
+    showWelcomeIfEmpty();
+    saveSessions();
+    renderSessions();
+  }
+
+  function switchSession(id) {
+    if (state.sending) { toast("请先停止当前生成"); return; }
+    if (id === currentSessionId) { closeSidebar(); return; }
+    syncCurrentSession();
+    var s = findSession(id);
+    if (!s) return;
+    removeMessageNodes();
+    state.messages = [];
+    state.conversationId = s.conversationId || "";
+    messagesEl.innerHTML = "";
+    (s.messages || []).forEach(mountPlain);
+    if (state.messages.length) scrollToBottom(true);
+    else showWelcomeIfEmpty();
+    currentSessionId = id;
+    lsSet(STORE.current, id);
+    saveSessions();
+    renderSessions();
+    closeSidebar();
+  }
+
+  function deleteSession(id) {
+    if (state.sending) { toast("请先停止当前生成"); return; }
+    sessions = sessions.filter(function (s) { return s.id !== id; });
+    if (id === currentSessionId) {
+      currentSessionId = "";
+      removeMessageNodes();
+      state.messages = [];
+      state.conversationId = "";
+      messagesEl.innerHTML = "";
+      showWelcomeIfEmpty();
+    }
+    saveSessions();
+    renderSessions();
+    toast("已删除该对话");
+  }
+
+  function timeShort(ts) {
+    var d = new Date(ts || Date.now());
+    var now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+    return (d.getMonth() + 1) + "/" + d.getDate();
+  }
+
+  function renderSessions() {
+    if (!historyList) return;
+    historyList.innerHTML = "";
+    var list = sessions.slice().sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); });
+    var shown = 0;
+    list.forEach(function (s) {
+      if (!s.messages || !s.messages.length) return;
+      shown++;
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "history-item" + (s.id === currentSessionId ? " active" : "");
+      var t = document.createElement("span");
+      t.className = "hi-title";
+      t.textContent = s.title || titleFromMessages(s.messages);
+      var tm = document.createElement("span");
+      tm.className = "hi-time";
+      tm.textContent = timeShort(s.updatedAt);
+      var del = document.createElement("span");
+      del.className = "hi-del";
+      del.textContent = "×";
+      del.title = "删除";
+      del.addEventListener("click", function (e) {
+        e.stopPropagation();
+        deleteSession(s.id);
+      });
+      btn.appendChild(t);
+      btn.appendChild(tm);
+      btn.appendChild(del);
+      btn.addEventListener("click", function () { switchSession(s.id); });
+      historyList.appendChild(btn);
+    });
+    if (!shown) {
+      var empty = document.createElement("div");
+      empty.className = "history-empty";
+      empty.textContent = "暂无历史对话";
+      historyList.appendChild(empty);
+    }
   }
 
   /* ============================================================
@@ -1592,6 +1847,7 @@
     tokenInput.disabled = isProxyMode();
     tokenInput.placeholder = isProxyMode() ? "由服务端环境变量 COZE_PAT 提供" : "pat_xxxxxxxxxxxxxxxx";
     $("tokenField").hidden = isProxyMode();
+    ownTokenToggle.checked = !isProxyMode();
     userIdInput.value = getUserId();
     botIdInput.value = getBotId();
     settingsModal.classList.add("open");
@@ -1602,13 +1858,22 @@
   }
 
   function saveSettings() {
+    var useOwn = ownTokenToggle.checked;
     var token = tokenInput.value.trim();
     var bot = botIdInput.value.trim();
     var uid = userIdInput.value.trim().replace(/\s+/g, "-").slice(0, 40);
     var oldUid = getUserId();
+    var oldMode = MODE;
+    var oldToken = getToken();
 
-    if (token) lsSet(STORE.token, token); else lsDel(STORE.token);
+    if (useOwn && !token) {
+      toast("请填写你自己的访问令牌");
+      tokenInput.focus();
+      return;
+    }
+
     if (bot) lsSet(STORE.bot, bot); else lsDel(STORE.bot);
+    if (useOwn) lsSet(STORE.token, token); else lsDel(STORE.token);
 
     if (uid) {
       lsSet(STORE.uid, uid);
@@ -1617,14 +1882,19 @@
       getUserId(); // 立刻生成一个新的匿名标识
     }
 
-    // 身份变化后旧会话不再属于当前用户，自动开新对话
-    if (oldUid !== getUserId() && state.messages.length) {
+    var newMode = useOwn ? "direct" : "proxy";
+    lsSet(STORE.mode, newMode);
+    MODE = newMode;
+
+    // 身份、令牌或模式变化后旧会话不再适用，自动开新对话
+    var changed = oldUid !== getUserId() || oldMode !== MODE || (useOwn && oldToken !== token);
+    if (changed && state.messages.length) {
       clearAll();
     }
 
     updateTokenBanner();
     closeSettings();
-    toast(uid ? "已固定学号：" + uid : "已恢复自动生成");
+    toast(useOwn ? "已切换为自带令牌（直连扣子）" : "已使用本站代理");
     if (!state.sending) statusText.textContent = "在线";
   }
 
@@ -1706,7 +1976,7 @@
 
     $("newChatBtn").addEventListener("click", function () {
       if (state.sending) { toast("请先停止当前生成"); return; }
-      clearAll();
+      newSession();
       closeSidebar();
     });
 
@@ -1729,6 +1999,13 @@
     });
 
     $("resetUidBtn").addEventListener("click", resetUid);
+
+    ownTokenToggle.addEventListener("change", function () {
+      var own = ownTokenToggle.checked;
+      tokenInput.disabled = !own;
+      $("tokenField").hidden = !own;
+      if (own) setTimeout(function () { tokenInput.focus(); }, 30);
+    });
 
     $("themeBtn").addEventListener("click", function () {
       var current = document.documentElement.getAttribute("data-theme");
