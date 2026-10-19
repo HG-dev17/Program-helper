@@ -989,7 +989,12 @@
       var nearBottom = chatScroll.scrollHeight - chatScroll.scrollTop - chatScroll.clientHeight < 140;
       if (!nearBottom) return;
     }
+    // 临时关闭平滑滚动：长对话切换时平滑动画会“滑不到位”
+    var prev = chatScroll.style.scrollBehavior;
+    chatScroll.style.scrollBehavior = "auto";
     chatScroll.scrollTop = chatScroll.scrollHeight;
+    void chatScroll.offsetHeight;
+    chatScroll.style.scrollBehavior = prev;
   }
 
   /* ============================================================
@@ -1395,7 +1400,10 @@
     if (s) {
       state.conversationId = s.conversationId || "";
       (s.messages || []).forEach(mountPlain);
-      if (state.messages.length) scrollToBottom(true);
+      if (state.messages.length) {
+        scrollToBottom(true);
+        setTimeout(function () { scrollToBottom(true); }, 60);
+      }
     }
     renderSessions();
   }
@@ -1451,8 +1459,10 @@
     state.conversationId = s.conversationId || "";
     messagesEl.innerHTML = "";
     (s.messages || []).forEach(mountPlain);
-    if (state.messages.length) scrollToBottom(true);
-    else showWelcomeIfEmpty();
+    if (state.messages.length) {
+      scrollToBottom(true);
+      setTimeout(function () { scrollToBottom(true); }, 60);
+    } else showWelcomeIfEmpty();
     currentSessionId = id;
     lsSet(STORE.current, id);
     saveSessions();
