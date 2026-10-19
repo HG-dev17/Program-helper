@@ -1238,6 +1238,8 @@
       if (!Array.isArray(list)) return;
       list.forEach(function (item) {
         if (!item || (item.role !== "user" && item.role !== "assistant")) return;
+        // 跳过流式过程中被中断、内容为空的助手消息
+        if (item.role === "assistant" && !String(item.content || "").trim() && !item.error) return;
         var msg = {
           role: item.role,
           content: String(item.content || ""),
